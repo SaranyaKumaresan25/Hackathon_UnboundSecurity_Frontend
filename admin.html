@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Panel – {{ user.username }}</title>
+
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/json-enc.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+
+  <!-- This makes EVERY htmx request send your API key -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      htmx.defineExtension("api-key", {
+        onEvent: (name, evt) => {
+          if (name === "htmx:configRequest") {
+            evt.detail.headers["api_key"] = "{{ api_key }}";
+          }
+        }
+      });
+    });
+  </script>
+</head>
+
+<body hx-ext="api-key">
+  <div class="container">
+
+    <h1>Admin Panel – {{ user.username }}</h1>
+    <p>Credits: <strong>{{ user.credits }}</strong> | Role: <strong>{{ user.role }}</strong></p>
+    <a href="/">← Back to login</a>
+    <hr>
+
+    <!-- ADD RULE -->
+    <h2>Add New Rule</h2>
+    <form hx-post="/api/rules"
+          hx-target="#rules-list"
+          hx-swap="innerHTML
+          hx-on::after-request="this.reset(); htmx.trigger('#rules-list', 'refresh')">
+      <input name="pattern" placeholder="Regex pattern  (e.g. rm\s+-rf.*)" required style="width:350px;padding:10px;">
+      <select name="action">
+        <option value="AUTO_ACCEPT">AUTO_ACCEPT</option>
+        <option value="AUTO_REJECT">AUTO_REJECT</option>
+      </select>
+      <input name="description" placeholder="Description (optional)" style="width:250px;padding:10px;">
+      <button type="submit">Add Rule</button>
+    </form>
+
+    <!-- CURRENT RULES (BEAUTIFUL) -->
+    <h2 style="margin-top:50px;">Current Rules</h2>
+    <div id="rules-list"
+         hx-get="/api/rules"
+         hx-trigger="load delay:150ms, refresh from:body"
+         hx-swap="innerHTML">
+      <p>Loading rules...</p>
+    </div>
+
+    <!-- AUDIT LOG (BEAUTIFUL) -->
+    <h2 style="margin-top:60px;">Audit Log</h2>
+    <table border="1" width="100%" style="border-collapse:collapse;">
+      <thead style="background:#0066ff;color:white;">
+        <tr>
+          <th style="padding:12px;">Time</th>
+          <th style="padding:12px;">User ID</th>
+          <th style="padding:12px;">Action</th>
+          <th style="padding:12px;">Details</th>
+        </tr>
+      </thead>
+      <tbody id="audit-body"
+             hx-get="/api/audit"
+             hx-trigger="load delay:250ms, every 10s"
+             hx-swap="innerHTML">
+        <tr><td colspan="4" style="padding:30px;color:#666;text-align:center;">No events yet — peace and quiet</td></tr>
+      </tbody>
+    </table>
+
+  </div>
+
+  <!-- MAGIC SCRIPT THAT MAKES EVERYTHING BEAUTIFUL -->
+  <script>
+    // Rules → pretty cards
+    htmx.on("htmx:afterOnLoad", function(evt) {
+      if (evt.detail.xhr.responseURL.includes("/api/rules")) {
+        const rules = JSON.parse(evt.detail.xhr.response);
+        const html = rules.map(r => `
+          <div style="padding:15px; margin:8px 0; background:${r.action==='AUTO_ACCEPT'?'#f0fff0':'#fff0f0'};
+                      border-left:6px solid ${r.action==='AUTO_ACCEPT'?'#0a0':'#a00'}; border-radius:8px;">
+            <strong style="font-family:monospace;">${r.pattern}</strong>
+            <span style="float:right; font-weight:bold; color:${r.action==='AUTO_ACCEPT'?'green':'red'}">
+              ${r.action}
+            </span>
+            ${r.description ? `<br><small style="color:#555;">${r.description}</small>` : ''}
+          </div>
+        `).join('');
+        document.getElementById("rules-list").innerHTML = html || "<em>No rules defined</em>";
+      }
+
+      // Audit log → nice table rows
+      if (evt.detail.xhr.responseURL.includes("/api/audit")) {
+        const logs = JSON.parse(evt.detail.xhr.response);
+        if (logs.length === 0) {
+          document.getElementById("audit-body").innerHTML = 
+            `<tr><td colspan="4" style="padding:40px;color:#666;text-align:center;">
+               No events yet – try running some commands!
+             </td></tr>`;
+        } else {
+          const rows = logs.map(l => `
+            <tr>
+              <td style="padding:10px;">${new Date(l.timestamp).toLocaleString()}</td>
+              <td style="padding:10px;">${l.user_id || "system"}</td>
+              <td style="padding:10px;"><strong>${l.action}</strong></td>
+              <td style="padding:10px;">${l.details}</td>
+            </tr>
+          `).join('');
+          document.getElementById("audit-body").innerHTML = rows;
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>
